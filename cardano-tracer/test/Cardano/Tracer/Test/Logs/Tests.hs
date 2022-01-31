@@ -17,9 +17,10 @@ import           System.Time.Extra
 import Debug.Trace
 
 import           Cardano.Tracer.Configuration
-import           Cardano.Tracer.Handlers.Logs.Utils (isItLog, symLinkName)
+import           Cardano.Tracer.Handlers.Logs.Utils (isItLog)
 import           Cardano.Tracer.Run (doRunCardanoTracer)
-import           Cardano.Tracer.Utils (applyBrake, initProtocolsBrake, initDataPointRequestors)
+import           Cardano.Tracer.Utils (applyBrake, initProtocolsBrake,
+                   initDataPointRequestors)
 
 import           Cardano.Tracer.Test.Forwarder
 import           Cardano.Tracer.Test.Utils
@@ -51,6 +52,7 @@ propLogs format rootDir localSock = do
       sleep 0.5
 
   doesDirectoryExist rootDir >>= \case
+    False -> false "root dir doesn't exist"
     True -> do
       traceIO $ "Logs, 1__, rootDir " <> rootDir
       -- ... and contains one node's subdir...
@@ -70,20 +72,7 @@ propLogs format rootDir localSock = do
                   false "subdir doesn't contain expected logs"
                 [_singleLog] ->
                   false "there is still 1 single log, no rotation"
-                logsWeNeed -> do
-                  -- ... and one symlink...
-                  let pathToSymLink = pathToSubDir </> symLinkName format
-                  symLinkIsHere <- doesFileExist pathToSymLink
-                  if symLinkIsHere
-                    then do
-                      -- ... to the latest *.log-file.
-                      maybeLatestLog <- getSymbolicLinkTarget pathToSymLink
-                      -- The logs' names contain timestamps, so the
-                      -- latest log is the maximum one.
-                      let latestLog = maximum logsWeNeed
-                      return $ latestLog === takeFileName maybeLatestLog
-                    else false "subdir doesn't contain a symlink"
-    False -> false "root dir doesn't exist"
+                _logsWeNeed -> return $ property True
  where
   config root p = TracerConfig
     { networkMagic   = 764824073
