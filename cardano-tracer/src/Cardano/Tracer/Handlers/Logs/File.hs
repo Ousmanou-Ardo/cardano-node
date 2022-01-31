@@ -12,7 +12,7 @@ module Cardano.Tracer.Handlers.Logs.File
 
 import           Control.Concurrent.Extra (Lock, withLock)
 import           Control.Monad (unless)
-import           Control.Monad.Extra (ifM, unlessM)
+import           Control.Monad.Extra (ifM)
 import           Data.Aeson (ToJSON, (.=), object, toJSON)
 import           Data.Aeson.Text (encodeToLazyText)
 import qualified Data.ByteString as BS
@@ -26,15 +26,13 @@ import qualified Data.Text.Lazy.Encoding as TLE
 import           Data.Time.Clock (UTCTime)
 import           Data.Time.Format (defaultTimeLocale, formatTime)
 import           System.Directory
+import           System.Directory.Extra (listFiles)
 import           System.FilePath ((</>))
-
-import Debug.Trace
 
 import           Cardano.Logging (Namespace, TraceObject (..))
 
 import           Cardano.Tracer.Configuration (LogFormat (..))
-import           Cardano.Tracer.Handlers.Logs.Utils (createLogAndSymLink,
-                   doesSymLinkValid, symLinkName)
+import           Cardano.Tracer.Handlers.Logs.Utils (createLogAndSymLink, isItLog)
 import           Cardano.Tracer.Types (NodeId (..))
 
 -- | Append the list of 'TraceObject's to the latest log via symbolic link.
@@ -53,34 +51,20 @@ writeTraceObjectsToFile
 writeTraceObjectsToFile nodeId currentLogLock rootDir ForHuman traceObjects = do
   let itemsToWrite = mapMaybe traceObjectToText traceObjects
   unless (null itemsToWrite) $ do
-    traceIO "writeTraceObjectsToFile, HUMAN"
-    pathToCurrentLog <- prepareLogsStructure nodeId rootDir ForHuman
-    traceIO $ "writeTraceObjectsToFile, HUMAN, path: " <> pathToCurrentLog
+    pathToCurrentLog <- getPathToCurrentlog nodeId rootDir ForHuman
     let preparedLine = TE.encodeUtf8 $ T.concat itemsToWrite
-    traceIO $ "writeTraceObjectsToFile, HUMAN, preparedLine: " <> show preparedLine
-    withLock currentLogLock $ do
-      targetLog <- getSymbolicLinkTarget pathToCurrentLog
-      traceIO $ "writeTraceObjectsToFile, HUMAN, target: " <> targetLog
-      traceIO "writeTraceObjectsToFile, HUMAN, append!"
+    withLock currentLogLock $
       BS.appendFile pathToCurrentLog preparedLine
-      sz1 <- getFileSize pathToCurrentLog
-      sz2 <- getFileSize targetLog
-      traceIO $ "writeTraceObjectsToFile, HUMAN, symlink sz: " <> show sz1
-      traceIO $ "writeTraceObjectsToFile, HUMAN, target sz: " <> show sz2
 
 writeTraceObjectsToFile nodeId currentLogLock rootDir ForMachine traceObjects = do
   let itemsToWrite = mapMaybe traceObjectToJSON traceObjects
   unless (null itemsToWrite) $ do
-    traceIO "writeTraceObjectsToFile, MACHINE"
-    pathToCurrentLog <- prepareLogsStructure nodeId rootDir ForMachine
-    traceIO $ "writeTraceObjectsToFile, MACHINE, path: " <> pathToCurrentLog
+    pathToCurrentLog <- getPathToCurrentlog nodeId rootDir ForMachine
     let preparedLine = TLE.encodeUtf8 $ TL.concat itemsToWrite
-    traceIO $ "writeTraceObjectsToFile, MACHINE, preparedLine: " <> show preparedLine
-    withLock currentLogLock $ do
-      traceIO "writeTraceObjectsToFile, MACHINE, append!"
+    withLock currentLogLock $
       LBS.appendFile pathToCurrentLog preparedLine
 
--- | Prepare the structure for the log files:
+-- | Returns the path to the current log. Prepares the structure for the log files if needed:
 --
 --   /rootDir
 --     /subDirForNode1
@@ -91,25 +75,29 @@ writeTraceObjectsToFile nodeId currentLogLock rootDir ForMachine traceObjects = 
 --     /subDirForNodeN
 --       logs from node N
 --
-prepareLogsStructure
+getPathToCurrentlog
   :: NodeId
   -> FilePath
   -> LogFormat
   -> IO FilePath
-prepareLogsStructure (NodeId anId) rootDir format = do
-  ifM (doesFileExist pathToCurrentLog)
-    (unlessM (doesSymLinkValid pathToCurrentLog) $ do
-      removeFile pathToCurrentLog
-      createLogAndSymLink subDirForLogs format)
-    $ do
-      -- The root directory (as a parent for subDirForLogs) will be created as well if needed.
-      createDirectoryIfMissing True subDirForLogs
-      createLogAndSymLink subDirForLogs format
-  return pathToCurrentLog
+getPathToCurrentlog (NodeId anId) rootDir format =
+  ifM (doesDirectoryExist subDirForLogs)
+    getPathToCurrentLogIfExists
+    prepareLogsStructure
  where
   subDirForLogs = rootDir </> T.unpack anId
-  -- This is a symlink to the current log file, please see rotation parameters.
-  pathToCurrentLog = subDirForLogs </> symLinkName format
+
+  getPathToCurrentLogIfExists = do
+    logsWeNeed <- filter (isItLog format) <$> listFiles subDirForLogs
+    if null logsWeNeed
+      then createLogAndSymLink subDirForLogs format
+      -- We can sort the logs by timestamp, the biggest one is the latest one.
+      else return $ subDirForLogs </> maximum logsWeNeed
+
+  prepareLogsStructure = do
+    -- The root directory (as a parent for subDirForLogs) will be created as well if needed.
+    createDirectoryIfMissing True subDirForLogs
+    createLogAndSymLink subDirForLogs format
 
 nl :: T.Text
 #ifdef UNIX

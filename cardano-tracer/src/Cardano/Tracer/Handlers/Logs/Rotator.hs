@@ -20,8 +20,6 @@ import           System.Directory.Extra (listDirectories, listFiles)
 import           System.FilePath ((</>), takeDirectory)
 import           System.Time.Extra (sleep)
 
-import Debug.Trace
-
 import           Cardano.Tracer.Configuration
 import           Cardano.Tracer.Handlers.Logs.Utils (createLogAndUpdateSymLink,
                    getTimeStampFromLog, isItLog)
@@ -55,7 +53,7 @@ launchRotator loggingParamsForFiles
 -- | All the logs with 'TraceObject's received from particular node
 --   will be stored in a separate subdirectory in the root directory.
 --
---   Each subdirectory contains a symbolic link, we use it to write
+--   Each subdirectory contains a symbolic link, we can use it to write
 --   log items to the latest log file. When we create the new log file,
 --   this symbolic link is switched to it.
 checkRootDir
@@ -87,7 +85,6 @@ checkLogs
 checkLogs currentLogLock
           RotationParams{rpLogLimitBytes, rpMaxAgeHours, rpKeepFilesNum} format subDirForLogs = do
   logs <- map (subDirForLogs </>) . filter (isItLog format) <$> listFiles subDirForLogs
-  traceIO $ "ROTATOR, checkLogs, logs " <> show logs
   unless (null logs) $ do
     -- Since logs' names contain timestamps, we can sort them: the maximum one is the latest log,
     -- and this is the current log (i.e. the log we're writing 'TraceObject's in).
@@ -107,21 +104,12 @@ checkIfCurrentLogIsFull
   -> Word64
   -> IO ()
 checkIfCurrentLogIsFull currentLogLock pathToCurrentLog format maxSizeInBytes =
-  whenM logIsFull $ do
-    traceIO "ROTATOR, checkIfCurrentLogIsFull YES"
+  whenM logIsFull $
     createLogAndUpdateSymLink currentLogLock (takeDirectory pathToCurrentLog) format
  where
   logIsFull = do
     size <- getFileSize pathToCurrentLog
-    fcontent <- readFile pathToCurrentLog
-    traceIO "ROTATOR, ************************"
-    traceIO $ "ROTATOR, file: " <> fcontent
-    traceIO "ROTATOR, ************************"
-    traceIO $ "ROTATOR, logIsFull, size: " <> show size
-    traceIO $ "ROTATOR, maxSizeInBytes: " <> show maxSizeInBytes
-    let b = fromIntegral size >= maxSizeInBytes
-    traceIO $ "ROTATOR, b: " <> show b
-    return b -- $ fromIntegral size >= maxSizeInBytes
+    return $ fromIntegral size >= maxSizeInBytes
 
 -- | If there are too old log files - they will be removed.
 --   Please note that some number of log files can be kept in any case.
