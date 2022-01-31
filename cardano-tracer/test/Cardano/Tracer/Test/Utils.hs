@@ -8,7 +8,7 @@ module Cardano.Tracer.Test.Utils
 
 import           System.Directory.Extra (listDirectories,
                    removePathForcibly)
-import           System.FilePath (dropDrive)
+import           System.FilePath ((</>), (<.>), dropDrive, takeBaseName)
 import           System.IO.Extra (newTempDir, newTempFile)
 import           System.Info.Extra (isMac, isWindows)
 import           Test.Tasty.QuickCheck
@@ -40,7 +40,7 @@ prepareLocalSock localSock
   | otherwise = localSock
  where
   pipeForWindows = "\\\\.\\pipe\\" <> dropDrive localSock
-  sockForMac = "/tmp/cardano-tracer-test.pipe"
+  sockForMac = "/tmp" </> takeBaseName localSock <.> "pipe"
 
 removeDirectoryContent :: FilePath -> IO ()
 removeDirectoryContent dir = listDirectories dir >>= mapM_ removePathForcibly
