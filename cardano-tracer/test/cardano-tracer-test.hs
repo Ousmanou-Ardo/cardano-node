@@ -8,8 +8,7 @@ import qualified Cardano.Tracer.Test.Logs.Tests as Logs
 main :: IO ()
 main = defaultMain $
   testGroup "cardano-tracer"
-    [ Logs.testsLogs
-    , Logs.testsJson
+    [ Logs.tests
     --, DataPoint.tests
     --, Network.tests
     --, Queue.tests
