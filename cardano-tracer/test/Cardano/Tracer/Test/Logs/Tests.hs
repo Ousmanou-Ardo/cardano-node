@@ -13,8 +13,6 @@ import           System.Directory
 import           System.FilePath
 import           System.Time.Extra
 
-import Debug.Trace
-
 import           Cardano.Tracer.Configuration
 import           Cardano.Tracer.Handlers.Logs.Utils (isItLog)
 import           Cardano.Tracer.Run (doRunCardanoTracer)
@@ -34,10 +32,6 @@ tests = localOption (QuickCheckTests 1) $ testGroup "Test.Logs"
 
 propLogs :: LogFormat -> FilePath -> FilePath -> IO Property
 propLogs format rootDir localSock = do
-  removeDirectoryContent rootDir
-
-  traceIO $ "Logs, 0__, localSock: " <> localSock
-
   stopProtocols <- initProtocolsBrake
   dpRequestors <- initDataPointRequestors
   withAsync (doRunCardanoTracer (config rootDir localSock) stopProtocols dpRequestors) . const $
@@ -48,26 +42,20 @@ propLogs format rootDir localSock = do
 
   doesDirectoryExist rootDir >>= \case
     False -> false "root dir doesn't exist"
-    True -> do
-      traceIO $ "Logs, 1__, rootDir " <> rootDir
+    True ->
       -- ... and contains one node's subdir...
       listDirectory rootDir >>= \case
         [] -> false "root dir is empty"
         (subDir:_) -> do
           -- ... with *.log-files inside...
           let pathToSubDir = rootDir </> subDir
-          traceIO $ "Logs, 3__. pathToSubDir " <> pathToSubDir
           listDirectory pathToSubDir >>= \case
             [] -> false "subdir is empty"
-            logsAndSymLink -> do
-              traceIO $ "Logs, 4__, logsAndSymLink " <> show logsAndSymLink
+            logsAndSymLink ->
               case filter (isItLog format) logsAndSymLink of
-                [] -> do
-                  traceIO $ "Logs, 5__, logsAndSymLink " <> show logsAndSymLink
-                  false "subdir doesn't contain expected logs"
-                [_singleLog] ->
-                  false "there is still 1 single log, no rotation"
-                _logsWeNeed -> return $ property True
+                []        -> false "subdir doesn't contain expected logs"
+                [_oneLog] -> false "there is still 1 single log, no rotation"
+                _logs     -> return $ property True
  where
   config root p = TracerConfig
     { networkMagic   = 764824073
